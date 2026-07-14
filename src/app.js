@@ -267,7 +267,7 @@ function renderKeyboard(time) {
   const activePitches = new Set();
   for (const note of state.sample.notes) {
     if (note.start > time) break;
-    if (note.end >= time) activePitches.add(note.pitch);
+    if (time < note.end) activePitches.add(note.pitch);
   }
 
   const firstPitch = 21; // A0

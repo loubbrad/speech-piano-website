@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "mido>=1.3.3,<2",
+#   "ariautils @ git+https://github.com/EleutherAI/aria-utils.git@4ed0749d2d70918610f03a5316bf283479ff9d09",
 # ]
 # ///
 """Prepare aligned speech and piano timelines for the browser demo.
@@ -12,8 +12,9 @@ Run from the repository root with:
 
 The source manifests' coarse piano classifications are intentionally ignored.
 Speech activity is derived from caption word timing and piano activity from the
-MIDI transcription. Piano notes are capped before contiguous regions are built,
-so a spurious long note cannot bridge an otherwise silent passage.
+MIDI transcription. Displayed notes preserve the resolved raw MIDI intervals.
+Only the copy used to build contiguous piano regions is duration-capped, so a
+spurious long note cannot bridge an otherwise silent passage.
 """
 
 from __future__ import annotations
@@ -22,12 +23,11 @@ import argparse
 import html
 import json
 import re
-from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-import mido
+from ariautils.midi import MidiDict
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -178,52 +178,43 @@ def build_speech_segments(
     ]
 
 
-def read_midi(
-    path: Path, max_note_duration: float
-) -> tuple[list[dict[str, Any]], list[dict[str, float]]]:
-    midi = mido.MidiFile(path)
-    tempo = 500_000
-    seconds = 0.0
-    active: dict[tuple[int, int], deque[tuple[float, int]]] = defaultdict(deque)
+def read_midi(path: Path) -> tuple[list[dict[str, Any]], list[dict[str, float]]]:
+    """Read resolved key-down notes and sustain-pedal intervals with Aria."""
+    midi = MidiDict.from_midi(path).resolve_overlaps()
+
+    def seconds_at_tick(tick: int) -> float:
+        return midi.tick_to_ms(tick) / 1000
+
+    notes = [
+        {
+            "start": round(seconds_at_tick(message["data"]["start"]), 4),
+            "end": round(seconds_at_tick(message["data"]["end"]), 4),
+            "pitch": message["data"]["pitch"],
+            "velocity": message["data"]["velocity"],
+            "channel": message["channel"],
+        }
+        for message in midi.note_msgs
+    ]
+    notes.sort(key=lambda note: (note["start"], note["pitch"], note["end"]))
+
     pedal_down: dict[int, float] = {}
     pedal_intervals: list[tuple[float, float]] = []
-    notes: list[dict[str, Any]] = []
+    for message in sorted(midi.pedal_msgs, key=lambda item: item["tick"]):
+        seconds = seconds_at_tick(message["tick"])
+        channel = message["channel"]
+        if message["data"] == 1 and channel not in pedal_down:
+            pedal_down[channel] = seconds
+        elif message["data"] == 0 and channel in pedal_down:
+            pedal_intervals.append((pedal_down.pop(channel), seconds))
 
-    for message in mido.merge_tracks(midi.tracks):
-        seconds += mido.tick2second(message.time, midi.ticks_per_beat, tempo)
-        if message.type == "set_tempo":
-            tempo = message.tempo
-            continue
-        if message.type == "control_change" and message.control == 64:
-            if message.value >= 64 and message.channel not in pedal_down:
-                pedal_down[message.channel] = seconds
-            elif message.value < 64 and message.channel in pedal_down:
-                pedal_intervals.append((pedal_down.pop(message.channel), seconds))
-            continue
-        if message.type == "note_on" and message.velocity > 0:
-            active[(message.channel, message.note)].append((seconds, message.velocity))
-            continue
-        if message.type not in {"note_off", "note_on"}:
-            continue
-        key = (message.channel, message.note)
-        if not active[key]:
-            continue
-        start, velocity = active[key].popleft()
-        end = min(seconds, start + max_note_duration)
-        notes.append(
-            {
-                "start": round(start, 4),
-                "end": round(max(start + 0.01, end), 4),
-                "pitch": message.note,
-                "velocity": velocity,
-                "channel": message.channel,
-            }
-        )
-
+    final_seconds = max(
+        [0.0]
+        + [note["end"] for note in notes]
+        + [seconds_at_tick(message["tick"]) for message in midi.pedal_msgs]
+    )
     for start in pedal_down.values():
-        pedal_intervals.append((start, seconds))
+        pedal_intervals.append((start, final_seconds))
 
-    notes.sort(key=lambda note: (note["start"], note["pitch"], note["end"]))
     pedal_intervals.sort()
     merged_pedal: list[list[float]] = []
     for start, end in pedal_intervals:
@@ -234,29 +225,35 @@ def read_midi(
         else:
             merged_pedal.append([start, end])
     pedal_segments = [
-        {"start": round(start, 4), "end": round(end, 4)}
-        for start, end in merged_pedal
+        {"start": round(start, 4), "end": round(end, 4)} for start, end in merged_pedal
     ]
     return notes, pedal_segments
 
 
 def build_piano_segments(
-    notes: list[dict[str, Any]], silence_gap: float
+    notes: list[dict[str, Any]],
+    silence_gap: float,
+    max_activity_note_duration: float,
 ) -> list[dict[str, Any]]:
     if not notes:
         return []
     segments: list[dict[str, Any]] = []
     start = notes[0]["start"]
-    end = notes[0]["end"]
+    end = min(notes[0]["end"], start + max_activity_note_duration)
     note_count = 1
     for note in notes[1:]:
+        note_end = min(note["end"], note["start"] + max_activity_note_duration)
         if note["start"] - end >= silence_gap:
             segments.append(
-                {"start": round(start, 3), "end": round(end, 3), "noteCount": note_count}
+                {
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "noteCount": note_count,
+                }
             )
-            start, end, note_count = note["start"], note["end"], 1
+            start, end, note_count = note["start"], note_end, 1
         else:
-            end = max(end, note["end"])
+            end = max(end, note_end)
             note_count += 1
     segments.append(
         {"start": round(start, 3), "end": round(end, 3), "noteCount": note_count}
@@ -268,13 +265,13 @@ def prepare_sample(
     directory: Path,
     speech_silence_gap: float,
     piano_silence_gap: float,
-    max_note_duration: float,
+    max_activity_note_duration: float,
 ) -> dict[str, Any]:
     manifest = json.loads((directory / "manifest.json").read_text())
     tokens = caption_tokens(directory / "captions.vtt")
-    notes, pedal = read_midi(directory / "transcription.mid", max_note_duration)
+    notes, pedal = read_midi(directory / "transcription.mid")
     speech = build_speech_segments(tokens, speech_silence_gap)
-    piano = build_piano_segments(notes, piano_silence_gap)
+    piano = build_piano_segments(notes, piano_silence_gap, max_activity_note_duration)
     video = manifest.get("database", {}).get("video_crawl", {})
     duration = max(
         [0.0]
@@ -318,10 +315,15 @@ def parse_args() -> argparse.Namespace:
         help="A gap this long starts a new piano segment (default: 1.0).",
     )
     parser.add_argument(
+        "--max-activity-note-duration",
         "--max-note-duration",
+        dest="max_activity_note_duration",
         type=float,
         default=5.0,
-        help="Cap every MIDI note at this duration in seconds (default: 5.0).",
+        help=(
+            "Cap note durations only while deriving contiguous piano activity "
+            "regions (default: 5.0)."
+        ),
     )
     return parser.parse_args()
 
@@ -331,30 +333,37 @@ def main() -> None:
     sample_dirs = sorted(
         path for path in args.samples.iterdir() if (path / "manifest.json").is_file()
     )
-    if min(
-        args.speech_silence_gap,
-        args.piano_silence_gap,
-        args.max_note_duration,
-    ) <= 0:
-        raise SystemExit("Silence gaps and maximum note duration must be positive.")
+    if (
+        min(
+            args.speech_silence_gap,
+            args.piano_silence_gap,
+            args.max_activity_note_duration,
+        )
+        <= 0
+    ):
+        raise SystemExit(
+            "Silence gaps and maximum activity note duration must be positive."
+        )
     samples = [
         prepare_sample(
             path,
             args.speech_silence_gap,
             args.piano_silence_gap,
-            args.max_note_duration,
+            args.max_activity_note_duration,
         )
         for path in sample_dirs
     ]
     payload = {
-        "version": 1,
+        "version": 2,
         "speechSilenceGapSeconds": args.speech_silence_gap,
         "pianoSilenceGapSeconds": args.piano_silence_gap,
-        "maxNoteDurationSeconds": args.max_note_duration,
+        "maxPianoActivityNoteDurationSeconds": args.max_activity_note_duration,
         "samples": samples,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    args.output.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
 
     print(f"Wrote {len(samples)} samples to {args.output.relative_to(ROOT)}")
     for sample in samples:
