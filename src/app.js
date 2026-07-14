@@ -16,6 +16,7 @@ const elements = {
   noteCount: document.querySelector("#note-count"),
   canvas: document.querySelector("#piano-roll"),
   keyboard: document.querySelector("#piano-keyboard"),
+  pedal: document.querySelector("#piano-pedal"),
   sampleTitle: document.querySelector("#sample-title"),
   sampleChannel: document.querySelector("#sample-channel"),
   sampleRationale: document.querySelector("#sample-rationale"),
@@ -30,6 +31,7 @@ const state = {
   playing: false,
   activeSpeech: -1,
   activeWordKey: "",
+  pedalDown: null,
 };
 
 function formatTime(seconds) {
@@ -63,6 +65,7 @@ async function createPlayer() {
     videoId: state.sample.youtubeId,
     playerVars: {
       controls: 0,
+      cc_load_policy: 0,
       playsinline: 1,
       rel: 0,
       modestbranding: 1,
@@ -72,14 +75,29 @@ async function createPlayer() {
       onReady: () => {
         state.playerReady = true;
         elements.playButton.disabled = false;
+        disableYouTubeCaptions();
       },
       onStateChange: handlePlayerState,
+      onApiChange: disableYouTubeCaptions,
     },
   });
 }
 
+function disableYouTubeCaptions() {
+  if (!state.player?.setOption) return;
+  // YouTube has exposed the module under both names across player versions.
+  for (const module of ["captions", "cc"]) {
+    try {
+      state.player.setOption(module, "track", {});
+    } catch {
+      // The module may not be loaded for videos without caption tracks.
+    }
+  }
+}
+
 function handlePlayerState(event) {
   state.playing = event.data === YT_PLAYING;
+  disableYouTubeCaptions();
   updatePlayButton();
 }
 
@@ -305,12 +323,26 @@ function renderKeyboard(time) {
   context.stroke();
 }
 
+function updatePedal(time) {
+  const pedalDown = state.sample.pedalSegments.some(
+    (segment) => time >= segment.start && time < segment.end,
+  );
+  if (pedalDown === state.pedalDown) return;
+  state.pedalDown = pedalDown;
+  elements.pedal.classList.toggle("active", pedalDown);
+  elements.pedal.setAttribute(
+    "aria-label",
+    pedalDown ? "Sustain pedal pressed" : "Sustain pedal released",
+  );
+}
+
 function render(time) {
   if (!state.sample) return;
   state.time = clampTime(time);
   updateCaption(state.time);
   renderPiano(state.time);
   renderKeyboard(state.time);
+  updatePedal(state.time);
   elements.currentTime.textContent = formatTime(state.time);
   if (document.activeElement !== elements.seek) elements.seek.value = String(state.time);
 }
@@ -339,6 +371,7 @@ function selectSample(index) {
   state.playing = false;
   state.activeSpeech = -1;
   state.activeWordKey = "";
+  state.pedalDown = null;
   if (state.playerReady) state.player.cueVideoById(sample.youtubeId, 0);
 
   elements.seek.max = String(sample.duration);

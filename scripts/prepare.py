@@ -178,17 +178,27 @@ def build_speech_segments(
     ]
 
 
-def read_midi_notes(path: Path, max_note_duration: float) -> list[dict[str, Any]]:
+def read_midi(
+    path: Path, max_note_duration: float
+) -> tuple[list[dict[str, Any]], list[dict[str, float]]]:
     midi = mido.MidiFile(path)
     tempo = 500_000
     seconds = 0.0
     active: dict[tuple[int, int], deque[tuple[float, int]]] = defaultdict(deque)
+    pedal_down: dict[int, float] = {}
+    pedal_intervals: list[tuple[float, float]] = []
     notes: list[dict[str, Any]] = []
 
     for message in mido.merge_tracks(midi.tracks):
         seconds += mido.tick2second(message.time, midi.ticks_per_beat, tempo)
         if message.type == "set_tempo":
             tempo = message.tempo
+            continue
+        if message.type == "control_change" and message.control == 64:
+            if message.value >= 64 and message.channel not in pedal_down:
+                pedal_down[message.channel] = seconds
+            elif message.value < 64 and message.channel in pedal_down:
+                pedal_intervals.append((pedal_down.pop(message.channel), seconds))
             continue
         if message.type == "note_on" and message.velocity > 0:
             active[(message.channel, message.note)].append((seconds, message.velocity))
@@ -210,8 +220,24 @@ def read_midi_notes(path: Path, max_note_duration: float) -> list[dict[str, Any]
             }
         )
 
+    for start in pedal_down.values():
+        pedal_intervals.append((start, seconds))
+
     notes.sort(key=lambda note: (note["start"], note["pitch"], note["end"]))
-    return notes
+    pedal_intervals.sort()
+    merged_pedal: list[list[float]] = []
+    for start, end in pedal_intervals:
+        if end <= start:
+            continue
+        if merged_pedal and start <= merged_pedal[-1][1]:
+            merged_pedal[-1][1] = max(merged_pedal[-1][1], end)
+        else:
+            merged_pedal.append([start, end])
+    pedal_segments = [
+        {"start": round(start, 4), "end": round(end, 4)}
+        for start, end in merged_pedal
+    ]
+    return notes, pedal_segments
 
 
 def build_piano_segments(
@@ -246,7 +272,7 @@ def prepare_sample(
 ) -> dict[str, Any]:
     manifest = json.loads((directory / "manifest.json").read_text())
     tokens = caption_tokens(directory / "captions.vtt")
-    notes = read_midi_notes(directory / "transcription.mid", max_note_duration)
+    notes, pedal = read_midi(directory / "transcription.mid", max_note_duration)
     speech = build_speech_segments(tokens, speech_silence_gap)
     piano = build_piano_segments(notes, piano_silence_gap)
     video = manifest.get("database", {}).get("video_crawl", {})
@@ -254,6 +280,7 @@ def prepare_sample(
         [0.0]
         + [segment["end"] for segment in speech]
         + [segment["end"] for segment in piano]
+        + [segment["end"] for segment in pedal]
         + [note["end"] for note in notes]
     )
     sample_id = manifest.get("youtube_id", directory.name)
@@ -267,10 +294,9 @@ def prepare_sample(
         "channel": video.get("channel_name") or "",
         "rationale": manifest.get("selection", {}).get("rationale", ""),
         "duration": round(duration, 3),
-        "audioUrl": f"/samples/{sample_id}/piano_stem.mp3",
-        "midiUrl": f"/samples/{sample_id}/transcription.mid",
         "speechSegments": speech,
         "pianoSegments": piano,
+        "pedalSegments": pedal,
         "notes": notes,
     }
 
@@ -334,7 +360,8 @@ def main() -> None:
     for sample in samples:
         print(
             f"  {sample['id']}: {len(sample['speechSegments'])} speech segments, "
-            f"{len(sample['pianoSegments'])} piano segments, {len(sample['notes'])} notes"
+            f"{len(sample['pianoSegments'])} piano segments, "
+            f"{len(sample['pedalSegments'])} pedal holds, {len(sample['notes'])} notes"
         )
 
 

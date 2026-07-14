@@ -89,9 +89,9 @@ select {
 
 .video-panel {
   position: relative;
+  width: 100%;
   overflow: hidden;
   aspect-ratio: 16 / 9;
-  max-height: 54vh;
   border: 1px solid var(--line);
   border-radius: 10px 10px 0 0;
   background: #000;
@@ -99,8 +99,12 @@ select {
 
 .video-panel iframe,
 #youtube-player {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0;
 }
 
 .transport {
@@ -183,6 +187,41 @@ select {
   height: 92px;
   border-top: 1px solid var(--line);
   background: #090b0d;
+}
+
+.piano-pedal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 25px;
+  border-top: 1px solid #23282c;
+  background: #111417;
+  color: #5f686f;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+}
+
+.pedal-light {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4a5157;
+  transition: background 100ms ease, box-shadow 100ms ease;
+}
+
+.piano-pedal.active {
+  border-top-color: rgba(240, 91, 100, 0.65);
+  background: rgba(185, 39, 52, 0.52);
+  color: #ffd9db;
+}
+
+.piano-pedal.active .pedal-light {
+  background: #ff7479;
+  box-shadow: 0 0 8px rgba(255, 116, 121, 0.8);
 }
 
 .sample-meta {
