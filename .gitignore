@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.uv-cache/
+.venv/
+
+# Raw source assets are large and are not needed by the static Pages app.
+samples/
+

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Interleaved speech and piano</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Dataset preview</p>
+          <h1>Interleaved speech + piano</h1>
+        </div>
+        <label class="sample-picker">
+          <span>Example</span>
+          <select id="sample-select" aria-label="Choose a sample"></select>
+        </label>
+      </header>
+
+      <section class="video-panel" aria-label="YouTube video">
+        <div id="youtube-player"></div>
+      </section>
+
+      <section class="transport" aria-label="Playback controls">
+        <button id="play-button" class="play-button" type="button" disabled>
+          <span id="play-icon" aria-hidden="true">▶</span>
+          <span id="play-label">Play</span>
+        </button>
+        <span id="current-time" class="time">0:00</span>
+        <input id="seek" class="seek" type="range" min="0" max="1" value="0" step="0.01" aria-label="Playback position" />
+        <span id="duration" class="time">0:00</span>
+      </section>
+
+      <section class="timeline-panel speech-panel" aria-labelledby="speech-heading">
+        <header class="panel-header">
+          <div>
+            <p class="track-label">Text modality</p>
+            <h2 id="speech-heading">Speech</h2>
+          </div>
+          <p><span id="speech-count">0</span> contiguous regions</p>
+        </header>
+        <p id="caption-readout" class="caption-readout" aria-live="polite">No speech at this point.</p>
+      </section>
+
+      <section class="timeline-panel piano-panel" aria-labelledby="piano-heading">
+        <header class="panel-header">
+          <div>
+            <p class="track-label">Musical modality</p>
+            <h2 id="piano-heading">Piano transcription</h2>
+          </div>
+          <p><span id="piano-count">0</span> contiguous regions · <span id="note-count">0</span> notes</p>
+        </header>
+        <canvas id="piano-roll" aria-label="Scrolling MIDI piano roll"></canvas>
+        <canvas id="piano-keyboard" aria-label="Piano keyboard showing currently pressed notes"></canvas>
+      </section>
+
+      <footer class="sample-meta">
+        <div>
+          <h2 id="sample-title">Loading…</h2>
+          <p id="sample-channel"></p>
+        </div>
+        <p id="sample-rationale"></p>
+      </footer>
+    </main>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

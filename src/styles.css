@@ -1,0 +1,213 @@
+:root {
+  color-scheme: dark;
+  --bg: #090b0d;
+  --surface: #111519;
+  --surface-raised: #171c21;
+  --line: #283038;
+  --text: #f0f3f5;
+  --muted: #8f9ba5;
+  --speech: #ffb454;
+  --speech-soft: rgba(255, 180, 84, 0.16);
+  --piano: #55d6a8;
+  --piano-soft: rgba(85, 214, 168, 0.12);
+  --playhead-position: 28%;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 20% -10%, rgba(85, 214, 168, 0.08), transparent 28rem),
+    var(--bg);
+}
+
+button, input, select { font: inherit; }
+
+.page-shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+.page-header,
+.panel-header,
+.sample-meta,
+.transport {
+  display: flex;
+  align-items: center;
+}
+
+.page-header {
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+h1, h2, p { margin: 0; }
+
+h1 {
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  letter-spacing: -0.04em;
+}
+
+.eyebrow,
+.track-label {
+  margin-bottom: 4px;
+  color: var(--piano);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.sample-picker {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+select {
+  width: min(440px, 48vw);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text);
+  padding: 9px 34px 9px 11px;
+  text-transform: none;
+}
+
+.video-panel {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  max-height: 54vh;
+  border: 1px solid var(--line);
+  border-radius: 10px 10px 0 0;
+  background: #000;
+}
+
+.video-panel iframe,
+#youtube-player {
+  width: 100%;
+  height: 100%;
+}
+
+.transport {
+  gap: 11px;
+  min-height: 56px;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--surface);
+}
+
+.play-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 84px;
+  border: 1px solid var(--piano);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--piano);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.play-button:disabled { opacity: 0.35; cursor: wait; }
+.play-button:not(:disabled):hover { background: var(--piano-soft); }
+
+.seek { accent-color: var(--piano); }
+
+.seek { min-width: 80px; flex: 1; }
+
+.time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+}
+
+.timeline-panel {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.panel-header {
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-header h2 { font-size: 1rem; }
+.panel-header > p { color: var(--muted); font-size: 0.74rem; }
+.speech-panel .track-label { color: var(--speech); }
+
+.caption-readout {
+  min-height: 64px;
+  padding: 17px 18px;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.caption-readout .current-word {
+  color: var(--text);
+  font-weight: 750;
+}
+
+#piano-roll {
+  display: block;
+  width: 100%;
+  height: 240px;
+  background: #0b0e11;
+}
+
+#piano-keyboard {
+  display: block;
+  width: 100%;
+  height: 92px;
+  border-top: 1px solid var(--line);
+  background: #090b0d;
+}
+
+.sample-meta {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 36px;
+  padding: 20px 2px 0;
+}
+
+.sample-meta h2 { font-size: 1rem; }
+.sample-meta p { margin-top: 5px; color: var(--muted); line-height: 1.55; font-size: 0.8rem; }
+.sample-meta > p { max-width: 560px; text-align: right; }
+
+@media (max-width: 720px) {
+  .page-shell { width: min(100% - 18px, 1120px); padding-top: 14px; }
+  .page-header { align-items: stretch; flex-direction: column; gap: 12px; }
+  select { width: 100%; }
+  .transport { flex-wrap: wrap; }
+  .seek { order: 5; flex-basis: 100%; }
+  .sample-meta { flex-direction: column; gap: 8px; }
+  .sample-meta > p { text-align: left; }
+  #piano-roll { height: 200px; }
+  #piano-keyboard { height: 76px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; transition: none !important; }
+}
