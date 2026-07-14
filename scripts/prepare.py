@@ -12,8 +12,8 @@ Run from the repository root with:
 
 The source manifests' coarse piano classifications are intentionally ignored.
 Speech activity is derived from caption word timing and piano activity from the
-MIDI transcription. In both cases, a gap of at least ``--silence-gap`` seconds
-starts a new segment.
+MIDI transcription. Piano notes are capped before contiguous regions are built,
+so a spurious long note cannot bridge an otherwise silent passage.
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ def build_speech_segments(
     ]
 
 
-def read_midi_notes(path: Path) -> list[dict[str, Any]]:
+def read_midi_notes(path: Path, max_note_duration: float) -> list[dict[str, Any]]:
     midi = mido.MidiFile(path)
     tempo = 500_000
     seconds = 0.0
@@ -199,10 +199,11 @@ def read_midi_notes(path: Path) -> list[dict[str, Any]]:
         if not active[key]:
             continue
         start, velocity = active[key].popleft()
+        end = min(seconds, start + max_note_duration)
         notes.append(
             {
                 "start": round(start, 4),
-                "end": round(max(start + 0.01, seconds), 4),
+                "end": round(max(start + 0.01, end), 4),
                 "pitch": message.note,
                 "velocity": velocity,
                 "channel": message.channel,
@@ -237,12 +238,17 @@ def build_piano_segments(
     return segments
 
 
-def prepare_sample(directory: Path, silence_gap: float) -> dict[str, Any]:
+def prepare_sample(
+    directory: Path,
+    speech_silence_gap: float,
+    piano_silence_gap: float,
+    max_note_duration: float,
+) -> dict[str, Any]:
     manifest = json.loads((directory / "manifest.json").read_text())
     tokens = caption_tokens(directory / "captions.vtt")
-    notes = read_midi_notes(directory / "transcription.mid")
-    speech = build_speech_segments(tokens, silence_gap)
-    piano = build_piano_segments(notes, silence_gap)
+    notes = read_midi_notes(directory / "transcription.mid", max_note_duration)
+    speech = build_speech_segments(tokens, speech_silence_gap)
+    piano = build_piano_segments(notes, piano_silence_gap)
     video = manifest.get("database", {}).get("video_crawl", {})
     duration = max(
         [0.0]
@@ -274,10 +280,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples", type=Path, default=DEFAULT_SAMPLES)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(
-        "--silence-gap",
+        "--speech-silence-gap",
         type=float,
         default=2.0,
-        help="A gap this long starts a new speech or piano segment (default: 2.0).",
+        help="A gap this long starts a new speech segment (default: 2.0).",
+    )
+    parser.add_argument(
+        "--piano-silence-gap",
+        type=float,
+        default=1.0,
+        help="A gap this long starts a new piano segment (default: 1.0).",
+    )
+    parser.add_argument(
+        "--max-note-duration",
+        type=float,
+        default=5.0,
+        help="Cap every MIDI note at this duration in seconds (default: 5.0).",
     )
     return parser.parse_args()
 
@@ -287,10 +305,26 @@ def main() -> None:
     sample_dirs = sorted(
         path for path in args.samples.iterdir() if (path / "manifest.json").is_file()
     )
-    samples = [prepare_sample(path, args.silence_gap) for path in sample_dirs]
+    if min(
+        args.speech_silence_gap,
+        args.piano_silence_gap,
+        args.max_note_duration,
+    ) <= 0:
+        raise SystemExit("Silence gaps and maximum note duration must be positive.")
+    samples = [
+        prepare_sample(
+            path,
+            args.speech_silence_gap,
+            args.piano_silence_gap,
+            args.max_note_duration,
+        )
+        for path in sample_dirs
+    ]
     payload = {
         "version": 1,
-        "silenceGapSeconds": args.silence_gap,
+        "speechSilenceGapSeconds": args.speech_silence_gap,
+        "pianoSilenceGapSeconds": args.piano_silence_gap,
+        "maxNoteDurationSeconds": args.max_note_duration,
         "samples": samples,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
