@@ -34,6 +34,32 @@
         <span id="duration" class="time">0:00</span>
       </section>
 
+      <section class="overview-panel" aria-labelledby="overview-heading">
+        <header class="overview-header">
+          <div>
+            <p class="track-label">Full recording</p>
+            <h2 id="overview-heading">Activity overview</h2>
+          </div>
+          <p>Click or drag to seek</p>
+        </header>
+        <div
+          id="activity-overview"
+          class="activity-overview"
+          role="slider"
+          tabindex="0"
+          aria-label="Full recording activity overview. Use left and right arrow keys to seek."
+          aria-valuemin="0"
+          aria-valuemax="1"
+          aria-valuenow="0"
+        >
+          <span class="activity-name speech-activity-name">Speech</span>
+          <span class="activity-name piano-activity-name">Piano</span>
+          <canvas id="activity-map" aria-hidden="true"></canvas>
+          <output id="speech-rate" class="activity-rate speech-activity-rate">0.0 words/s</output>
+          <output id="piano-rate" class="activity-rate piano-activity-rate">0.0 notes/s</output>
+        </div>
+      </section>
+
       <section class="timeline-panel speech-panel" aria-labelledby="speech-heading">
         <header class="panel-header">
           <div>

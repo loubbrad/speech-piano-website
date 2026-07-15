@@ -1,6 +1,9 @@
 const PIXELS_PER_SECOND = 58;
 const PLAYHEAD_FRACTION = 0.28;
 const YT_PLAYING = 1;
+const ACTIVITY_BIN_SECONDS = 2;
+const SPEECH_RGB = "255, 180, 84";
+const PIANO_RGB = "127, 167, 255";
 
 const elements = {
   sampleSelect: document.querySelector("#sample-select"),
@@ -10,6 +13,10 @@ const elements = {
   seek: document.querySelector("#seek"),
   currentTime: document.querySelector("#current-time"),
   duration: document.querySelector("#duration"),
+  activityOverview: document.querySelector("#activity-overview"),
+  activityMap: document.querySelector("#activity-map"),
+  speechRate: document.querySelector("#speech-rate"),
+  pianoRate: document.querySelector("#piano-rate"),
   captionReadout: document.querySelector("#caption-readout"),
   speechCount: document.querySelector("#speech-count"),
   pianoCount: document.querySelector("#piano-count"),
@@ -32,6 +39,8 @@ const state = {
   activeSpeech: -1,
   activeWordKey: "",
   pedalDown: null,
+  activityBin: -1,
+  overviewDragging: false,
 };
 
 function formatTime(seconds) {
@@ -188,6 +197,119 @@ function resizeCanvas(canvas) {
   }
 }
 
+function robustMaximum(values) {
+  const active = values.filter((value) => value > 0).sort((a, b) => a - b);
+  if (!active.length) return 1;
+  return active[Math.floor((active.length - 1) * 0.95)] || 1;
+}
+
+function buildActivityOverview(sample) {
+  const binCount = Math.max(1, Math.ceil(sample.duration / ACTIVITY_BIN_SECONDS));
+  const speechCounts = Array(binCount).fill(0);
+  const pianoCounts = Array(binCount).fill(0);
+
+  for (const segment of sample.speechSegments) {
+    for (const word of segment.words) {
+      const index = Math.min(
+        binCount - 1,
+        Math.floor(word.start / ACTIVITY_BIN_SECONDS),
+      );
+      speechCounts[index] += 1;
+    }
+  }
+  for (const note of sample.notes) {
+    const index = Math.min(
+      binCount - 1,
+      Math.floor(note.start / ACTIVITY_BIN_SECONDS),
+    );
+    pianoCounts[index] += 1;
+  }
+
+  const rateForBin = (count, index) => {
+    const start = index * ACTIVITY_BIN_SECONDS;
+    const span = Math.min(ACTIVITY_BIN_SECONDS, sample.duration - start);
+    return count / Math.max(span, 0.001);
+  };
+  const speech = speechCounts.map(rateForBin);
+  const piano = pianoCounts.map(rateForBin);
+  return {
+    speech,
+    piano,
+    speechMaximum: robustMaximum(speech),
+    pianoMaximum: robustMaximum(piano),
+  };
+}
+
+function drawActivityLane(context, rates, maximum, y, height, width, color) {
+  context.fillStyle = "rgba(255, 255, 255, 0.025)";
+  context.fillRect(0, y, width, height);
+  for (let index = 0; index < rates.length; index += 1) {
+    if (rates[index] <= 0) continue;
+    const startX = Math.floor((index / rates.length) * width);
+    const endX = Math.ceil(((index + 1) / rates.length) * width);
+    const intensity = Math.min(1, rates[index] / maximum);
+    context.fillStyle = `rgba(${color}, ${0.12 + intensity * 0.78})`;
+    context.fillRect(startX, y, Math.max(1, endX - startX), height);
+  }
+}
+
+function renderActivityOverview(time) {
+  const canvas = elements.activityMap;
+  resizeCanvas(canvas);
+  const context = canvas.getContext("2d");
+  const ratio = window.devicePixelRatio || 1;
+  const width = canvas.width / ratio;
+  const height = canvas.height / ratio;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const gap = 6;
+  const laneHeight = (height - gap) / 2;
+  const activity = state.sample.activity;
+  drawActivityLane(
+    context,
+    activity.speech,
+    activity.speechMaximum,
+    0,
+    laneHeight,
+    width,
+    SPEECH_RGB,
+  );
+  drawActivityLane(
+    context,
+    activity.piano,
+    activity.pianoMaximum,
+    laneHeight + gap,
+    laneHeight,
+    width,
+    PIANO_RGB,
+  );
+
+  const playheadX = (time / state.sample.duration) * width;
+  context.fillStyle = "rgba(255, 255, 255, 0.92)";
+  context.fillRect(
+    Math.max(0, Math.min(width - 1, Math.round(playheadX))),
+    0,
+    1,
+    height,
+  );
+
+  const bin = Math.min(
+    activity.speech.length - 1,
+    Math.floor(time / ACTIVITY_BIN_SECONDS),
+  );
+  if (bin !== state.activityBin) {
+    state.activityBin = bin;
+    elements.speechRate.textContent = `${activity.speech[bin].toFixed(1)} words/s`;
+    elements.pianoRate.textContent = `${activity.piano[bin].toFixed(1)} notes/s`;
+  }
+  elements.activityOverview.setAttribute("aria-valuenow", String(Math.round(time)));
+  elements.activityOverview.setAttribute(
+    "aria-valuetext",
+    `${formatTime(time)} of ${formatTime(state.sample.duration)}`,
+  );
+}
+
 function renderPiano(time) {
   resizeCanvas(elements.canvas);
   const canvas = elements.canvas;
@@ -207,7 +329,7 @@ function renderPiano(time) {
   const pitchSpan = Math.max(1, maxPitch - minPitch + 1);
   const rowHeight = height / pitchSpan;
 
-  context.fillStyle = "rgba(85, 214, 168, 0.085)";
+  context.fillStyle = "rgba(127, 167, 255, 0.09)";
   for (const segment of state.sample.pianoSegments) {
     if (segment.end < visibleStart || segment.start > visibleEnd) continue;
     const x = playheadX + (segment.start - time) * PIXELS_PER_SECOND;
@@ -238,7 +360,7 @@ function renderPiano(time) {
     const noteWidth = Math.max(2, (note.end - note.start) * PIXELS_PER_SECOND - 1);
     const y = (maxPitch - note.pitch) * rowHeight;
     const velocityAlpha = 0.45 + (note.velocity / 127) * 0.5;
-    context.fillStyle = `rgba(85, 214, 168, ${velocityAlpha})`;
+    context.fillStyle = `rgba(127, 167, 255, ${velocityAlpha})`;
     context.fillRect(x, y + 0.5, noteWidth, Math.max(1.5, rowHeight - 1));
   }
 
@@ -286,13 +408,13 @@ function renderKeyboard(time) {
     const x = whiteIndex * whiteWidth;
     const active = activePitches.has(pitch);
     const press = active ? 3 : 0;
-    context.fillStyle = active ? "#e34b52" : "#e7e7e3";
+    context.fillStyle = active ? "#7fa7ff" : "#e7e7e3";
     context.fillRect(x + 0.5, press, Math.max(1, whiteWidth - 1), height - press - 1);
-    context.strokeStyle = active ? "#ff7479" : "#33383d";
+    context.strokeStyle = active ? "#aac2ff" : "#33383d";
     context.lineWidth = 1;
     context.strokeRect(x + 0.5, press + 0.5, Math.max(1, whiteWidth - 1), height - press - 1);
     if (active) {
-      context.fillStyle = "rgba(75, 0, 5, 0.2)";
+      context.fillStyle = "rgba(25, 43, 86, 0.24)";
       context.fillRect(x + 1, height - 7, Math.max(1, whiteWidth - 2), 5);
     }
     whiteIndex += 1;
@@ -308,9 +430,9 @@ function renderKeyboard(time) {
     const x = whiteIndex * whiteWidth - blackWidth / 2;
     const active = activePitches.has(pitch);
     const press = active ? 3 : 0;
-    context.fillStyle = active ? "#b92734" : "#15191c";
+    context.fillStyle = active ? "#415eaa" : "#15191c";
     context.fillRect(x, press, blackWidth, blackHeight - press);
-    context.strokeStyle = active ? "#f05b64" : "#020304";
+    context.strokeStyle = active ? "#7fa7ff" : "#020304";
     context.strokeRect(x + 0.5, press + 0.5, blackWidth - 1, blackHeight - press - 1);
     context.fillStyle = active ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.06)";
     context.fillRect(x + 1, press + 1, Math.max(1, blackWidth - 2), 2);
@@ -340,6 +462,7 @@ function render(time) {
   if (!state.sample) return;
   state.time = clampTime(time);
   updateCaption(state.time);
+  renderActivityOverview(state.time);
   renderPiano(state.time);
   renderKeyboard(state.time);
   updatePedal(state.time);
@@ -359,6 +482,7 @@ function enrichSample(sample) {
   const pitchValues = sample.notes.map((note) => note.pitch);
   sample.minPitch = Math.min(...pitchValues);
   sample.maxPitch = Math.max(...pitchValues);
+  sample.activity = buildActivityOverview(sample);
   return sample;
 }
 
@@ -372,11 +496,16 @@ function selectSample(index) {
   state.activeSpeech = -1;
   state.activeWordKey = "";
   state.pedalDown = null;
+  state.activityBin = -1;
   if (state.playerReady) state.player.cueVideoById(sample.youtubeId, 0);
 
   elements.seek.max = String(sample.duration);
   elements.seek.value = "0";
   elements.duration.textContent = formatTime(sample.duration);
+  elements.activityOverview.setAttribute(
+    "aria-valuemax",
+    String(Math.round(sample.duration)),
+  );
   elements.speechCount.textContent = sample.speechSegments.length.toLocaleString();
   elements.pianoCount.textContent = sample.pianoSegments.length.toLocaleString();
   elements.noteCount.textContent = sample.notes.length.toLocaleString();
@@ -410,6 +539,35 @@ elements.sampleSelect.addEventListener("change", (event) => {
 });
 elements.playButton.addEventListener("click", togglePlayback);
 elements.seek.addEventListener("input", (event) => seekTo(Number(event.target.value)));
+function seekFromOverview(event) {
+  const bounds = elements.activityMap.getBoundingClientRect();
+  const fraction = Math.max(
+    0,
+    Math.min(1, (event.clientX - bounds.left) / bounds.width),
+  );
+  seekTo(fraction * state.sample.duration);
+}
+elements.activityMap.addEventListener("pointerdown", (event) => {
+  state.overviewDragging = true;
+  elements.activityMap.setPointerCapture(event.pointerId);
+  seekFromOverview(event);
+});
+elements.activityMap.addEventListener("pointermove", (event) => {
+  if (state.overviewDragging) seekFromOverview(event);
+});
+elements.activityMap.addEventListener("pointerup", () => {
+  state.overviewDragging = false;
+});
+elements.activityMap.addEventListener("pointercancel", () => {
+  state.overviewDragging = false;
+});
+elements.activityOverview.addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === "Home") seekTo(0);
+  else if (event.key === "End") seekTo(state.sample.duration);
+  else seekTo(state.time + (event.key === "ArrowRight" ? 5 : -5));
+});
 window.addEventListener("resize", () => render(state.time));
 window.addEventListener("keydown", (event) => {
   if (event.code === "Space" && !["INPUT", "SELECT", "BUTTON"].includes(event.target.tagName)) {
