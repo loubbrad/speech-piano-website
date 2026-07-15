@@ -8,12 +8,10 @@ const PIANO_RGB = "127, 167, 255";
 const elements = {
   sampleSelect: document.querySelector("#sample-select"),
   playButton: document.querySelector("#play-button"),
-  playIcon: document.querySelector("#play-icon"),
   playLabel: document.querySelector("#play-label"),
   seek: document.querySelector("#seek"),
   currentTime: document.querySelector("#current-time"),
   duration: document.querySelector("#duration"),
-  activityOverview: document.querySelector("#activity-overview"),
   activityMap: document.querySelector("#activity-map"),
   speechRate: document.querySelector("#speech-rate"),
   pianoRate: document.querySelector("#piano-rate"),
@@ -40,7 +38,6 @@ const state = {
   activeWordKey: "",
   pedalDown: null,
   activityBin: -1,
-  overviewDragging: false,
 };
 
 function formatTime(seconds) {
@@ -111,8 +108,9 @@ function handlePlayerState(event) {
 }
 
 function updatePlayButton() {
-  elements.playIcon.textContent = state.playing ? "❚❚" : "▶";
+  elements.playButton.classList.toggle("is-playing", state.playing);
   elements.playLabel.textContent = state.playing ? "Pause" : "Play";
+  elements.playButton.setAttribute("aria-label", state.playing ? "Pause" : "Play");
 }
 
 function togglePlayback() {
@@ -286,13 +284,11 @@ function renderActivityOverview(time) {
   );
 
   const playheadX = (time / state.sample.duration) * width;
+  const playheadPixel = Math.max(0, Math.min(width - 1, Math.round(playheadX)));
   context.fillStyle = "rgba(255, 255, 255, 0.92)";
-  context.fillRect(
-    Math.max(0, Math.min(width - 1, Math.round(playheadX))),
-    0,
-    1,
-    height,
-  );
+  context.fillRect(playheadPixel, 0, 1, height);
+  context.fillRect(Math.max(0, playheadPixel - 2), 0, 5, 2);
+  context.fillRect(Math.max(0, playheadPixel - 2), height - 2, 5, 2);
 
   const bin = Math.min(
     activity.speech.length - 1,
@@ -303,8 +299,7 @@ function renderActivityOverview(time) {
     elements.speechRate.textContent = `${activity.speech[bin].toFixed(1)} words/s`;
     elements.pianoRate.textContent = `${activity.piano[bin].toFixed(1)} notes/s`;
   }
-  elements.activityOverview.setAttribute("aria-valuenow", String(Math.round(time)));
-  elements.activityOverview.setAttribute(
+  elements.seek.setAttribute(
     "aria-valuetext",
     `${formatTime(time)} of ${formatTime(state.sample.duration)}`,
   );
@@ -467,7 +462,7 @@ function render(time) {
   renderKeyboard(state.time);
   updatePedal(state.time);
   elements.currentTime.textContent = formatTime(state.time);
-  if (document.activeElement !== elements.seek) elements.seek.value = String(state.time);
+  elements.seek.value = String(state.time);
 }
 
 function animationFrame() {
@@ -502,10 +497,6 @@ function selectSample(index) {
   elements.seek.max = String(sample.duration);
   elements.seek.value = "0";
   elements.duration.textContent = formatTime(sample.duration);
-  elements.activityOverview.setAttribute(
-    "aria-valuemax",
-    String(Math.round(sample.duration)),
-  );
   elements.speechCount.textContent = sample.speechSegments.length.toLocaleString();
   elements.pianoCount.textContent = sample.pianoSegments.length.toLocaleString();
   elements.noteCount.textContent = sample.notes.length.toLocaleString();
@@ -539,35 +530,6 @@ elements.sampleSelect.addEventListener("change", (event) => {
 });
 elements.playButton.addEventListener("click", togglePlayback);
 elements.seek.addEventListener("input", (event) => seekTo(Number(event.target.value)));
-function seekFromOverview(event) {
-  const bounds = elements.activityMap.getBoundingClientRect();
-  const fraction = Math.max(
-    0,
-    Math.min(1, (event.clientX - bounds.left) / bounds.width),
-  );
-  seekTo(fraction * state.sample.duration);
-}
-elements.activityMap.addEventListener("pointerdown", (event) => {
-  state.overviewDragging = true;
-  elements.activityMap.setPointerCapture(event.pointerId);
-  seekFromOverview(event);
-});
-elements.activityMap.addEventListener("pointermove", (event) => {
-  if (state.overviewDragging) seekFromOverview(event);
-});
-elements.activityMap.addEventListener("pointerup", () => {
-  state.overviewDragging = false;
-});
-elements.activityMap.addEventListener("pointercancel", () => {
-  state.overviewDragging = false;
-});
-elements.activityOverview.addEventListener("keydown", (event) => {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  if (event.key === "Home") seekTo(0);
-  else if (event.key === "End") seekTo(state.sample.duration);
-  else seekTo(state.time + (event.key === "ArrowRight" ? 5 : -5));
-});
 window.addEventListener("resize", () => render(state.time));
 window.addEventListener("keydown", (event) => {
   if (event.code === "Space" && !["INPUT", "SELECT", "BUTTON"].includes(event.target.tagName)) {
