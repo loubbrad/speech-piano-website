@@ -6,7 +6,8 @@ const SPEECH_RGB = "255, 180, 84";
 const PIANO_RGB = "127, 167, 255";
 
 const elements = {
-  sampleSelect: document.querySelector("#sample-select"),
+  previousSample: document.querySelector("#previous-sample"),
+  nextSample: document.querySelector("#next-sample"),
   playButton: document.querySelector("#play-button"),
   playLabel: document.querySelector("#play-label"),
   seek: document.querySelector("#seek"),
@@ -38,6 +39,7 @@ const state = {
   activeWordKey: "",
   pedalDown: null,
   activityBin: -1,
+  sampleHistory: [],
 };
 
 function formatTime(seconds) {
@@ -503,8 +505,27 @@ function selectSample(index) {
   elements.sampleTitle.textContent = sample.title;
   elements.sampleChannel.textContent = sample.channel;
   elements.sampleRationale.textContent = sample.rationale;
+  elements.previousSample.disabled = state.sampleHistory.length === 0;
   updatePlayButton();
   render(0);
+}
+
+function randomSampleIndex() {
+  if (state.samples.length < 2) return 0;
+  let index;
+  do index = Math.floor(Math.random() * state.samples.length);
+  while (state.samples[index] === state.sample);
+  return index;
+}
+
+function selectNextSample() {
+  if (state.sample) state.sampleHistory.push(state.samples.indexOf(state.sample));
+  selectSample(randomSampleIndex());
+}
+
+function selectPreviousSample() {
+  const index = state.sampleHistory.pop();
+  if (index !== undefined) selectSample(index);
 }
 
 async function init() {
@@ -515,19 +536,12 @@ async function init() {
   if (!response.ok) throw new Error(`Could not load dataset: HTTP ${response.status}`);
   const dataset = await response.json();
   state.samples = dataset.samples.map(enrichSample);
-  for (const [index, sample] of state.samples.entries()) {
-    const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = `${sample.title} — ${sample.channel}`;
-    elements.sampleSelect.appendChild(option);
-  }
-  selectSample(0);
+  selectSample(randomSampleIndex());
   await createPlayer();
 }
 
-elements.sampleSelect.addEventListener("change", (event) => {
-  selectSample(Number(event.target.value));
-});
+elements.previousSample.addEventListener("click", selectPreviousSample);
+elements.nextSample.addEventListener("click", selectNextSample);
 elements.playButton.addEventListener("click", togglePlayback);
 elements.seek.addEventListener("input", (event) => seekTo(Number(event.target.value)));
 window.addEventListener("resize", () => render(state.time));

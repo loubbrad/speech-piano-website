@@ -30,7 +30,7 @@ body {
     var(--bg);
 }
 
-button, input, select { font: inherit; }
+button, input { font: inherit; }
 
 .visually-hidden {
   position: absolute;
@@ -81,25 +81,19 @@ h1 {
 
 .eyebrow { color: var(--control); }
 
-.sample-picker {
-  display: grid;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+.sample-nav { display: flex; gap: 8px; }
 
-select {
-  width: min(440px, 48vw);
+.sample-nav button {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface-raised);
   color: var(--text);
-  padding: 9px 34px 9px 11px;
-  text-transform: none;
+  padding: 9px 13px;
+  cursor: pointer;
 }
+
+.sample-nav button:hover:not(:disabled) { border-color: var(--muted); }
+.sample-nav button:disabled { opacity: 0.4; cursor: default; }
 
 .video-panel {
   position: relative;
@@ -398,7 +392,6 @@ select {
 @media (max-width: 720px) {
   .page-shell { width: min(100% - 18px, 1120px); padding-top: 14px; }
   .page-header { align-items: stretch; flex-direction: column; gap: 12px; }
-  select { width: 100%; }
   .transport { gap: 9px; padding-inline: 10px; }
   .transport-action { width: 44px; flex-basis: 44px; }
   .activity-overview,

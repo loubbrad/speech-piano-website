@@ -268,13 +268,15 @@ def prepare_sample(
     max_activity_note_duration: float,
 ) -> dict[str, Any]:
     manifest = json.loads((directory / "manifest.json").read_text())
-    tokens = caption_tokens(directory / "captions.vtt")
+    caption_path = directory / "captions.vtt"
+    tokens = caption_tokens(caption_path) if caption_path.is_file() else []
     notes, pedal = read_midi(directory / "transcription.mid")
     speech = build_speech_segments(tokens, speech_silence_gap)
     piano = build_piano_segments(notes, piano_silence_gap, max_activity_note_duration)
     video = manifest.get("database", {}).get("video_crawl", {})
     duration = max(
         [0.0]
+        + [manifest.get("selection", {}).get("caption_span_seconds") or 0.0]
         + [segment["end"] for segment in speech]
         + [segment["end"] for segment in piano]
         + [segment["end"] for segment in pedal]

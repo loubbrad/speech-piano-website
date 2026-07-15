@@ -18,6 +18,21 @@ SPEC.loader.exec_module(prepare)
 
 
 class MidiPreparationTest(unittest.TestCase):
+    def test_midi_only_sample_uses_caption_span_for_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            (directory / "manifest.json").write_text(
+                '{"youtube_id":"sample","selection":{"caption_span_seconds":12.5}}'
+            )
+            midi = mido.MidiFile(type=0)
+            midi.tracks.append(mido.MidiTrack())
+            midi.save(directory / "transcription.mid")
+
+            sample = prepare.prepare_sample(directory, 2.0, 1.0, 5.0)
+
+        self.assertEqual(sample["duration"], 12.5)
+        self.assertEqual(sample["speechSegments"], [])
+
     def test_duplicate_note_on_does_not_shift_later_note_offsets(self) -> None:
         midi = mido.MidiFile(type=0, ticks_per_beat=500)
         track = mido.MidiTrack()
